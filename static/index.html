@@ -3,7 +3,7 @@
 <head>
 <meta http-equiv="Content-Type" content="text/html;charset=utf-8" >
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>A Tour of Go</title>
+<title>Go at a Glance</title>
 
 <!-- jQuery -->
 <script src="static/jquery.js"></script>
@@ -216,7 +216,7 @@ func main() {
 	<li>Slices</li>
 	<li>Maps</li>
 </ul>
-<p>There are other data types provided by libraries such as linked lists, hash tables, etc.</p>
+<p>There are other data types provided by libraries such as linked lists, heaps, etc.</p>
 <pre class="source">
 package main
 
@@ -235,11 +235,12 @@ func (a Animal) String() string {
 
 func main() {
 	
-	names := [3]string{"dog", "cat", "horse"} //an array, not used often
-	fmt.Println("Array:", names)
 	
 	dog := Animal{4, "dog"} //Allocate a new dog
 	fmt.Println("Dog:", dog)
+
+	names := [3]string{"dog", "cat", "horse"} //an array, not used often
+	fmt.Println("Array:", names)
 	
 	//A slice
 	cats := make([]Animal, 2, 5)
@@ -266,21 +267,288 @@ func main() {
 
 <div class="slide">
 	<h2>Pointers</h2>
+	Pointers work in Go much as you would expect (based on C), except that memory management works as you expect, and there is no arithmetic.
 <pre class="source">
+package main
+
+import (
+	"fmt"
+)
+
+func ptr1() *int {
+	num := 1
+	return &num
+	//this works, gets translated to a 
+	//pointer
+}
+func ptr2() *int {
+	num := new(int)
+	*num = 2
+	return num
+	//this works too, 
+	//and gets garbage collected automatically
+}
+
+func main() {
+	fmt.Println(*ptr1())
+	fmt.Println(*ptr2())
+
+	a := 1
+	b := &a
+	*b = 2
+	fmt.Println(a)
+}
 </pre>
 </div>
 
 <div class="slide">
 	<h2>Interfaces</h2>
+	Interfaces are Go's answer to classes. Interfaces are a definition of functions on an object that implement the interface and can be used to generalize code.
+
 <pre class="source">
+package main
+
+import (
+	"fmt"
+)
+
+type Animal interface {
+	Name() string
+	Speak() string
+}
+
+type Dog string
+
+func (d *Dog) Speak() string {
+	return "Bark!"
+}
+
+func (d *Dog) Name() string {
+	return string(*d)
+}
+
+func speaker(a Animal) {
+	fmt.Println(a.Name(), "says", a.Speak())
+}
+
+func main() {
+	d := Dog("Dog")
+	speaker(&d)
+}
 </pre>
 </div>
 
 <div class="slide">
 	<h2>Concurrency</h2>
+	<p>Concurrency in Go is based on "share by communicating", and coroutines, rather than traditional locking and threads (though locking is available, and multiple threads are possible.)</p>
+	<p>Communication is done over channels.</p>
 <pre class="source">
+package main
+
+import (
+	"fmt"
+	"math/rand"
+	"time"
+)
+
+func retInt(i int, c chan int, t time.Duration) {
+	time.Sleep(t)
+	c <- i
+}
+
+func main() {
+	c := make(chan int)
+	for i := 0; i < 100; i++ {
+		seconds := rand.Int() % 3
+		duration := time.Duration(seconds) * time.Second
+		go retInt(i, c, duration)
+	}
+	for i := 0; i < 100; i++ {
+		a := <- c
+		fmt.Println(a)
+	}
+}
 </pre>
 </div>
+
+<div class="slide noslide">
+<h2>Concurrency</h2>
+<pre class="source">
+//Quicksort (non-parallel)
+package main
+
+import (
+	"fmt"
+	"time"
+)
+
+func filter(numbers []int) (int, []int, []int) {
+	//Make slices to sort filter the numbers into
+	lesser := make([]int, 0, len(numbers))
+	greater := make([]int, 0, len(numbers))
+	
+	
+	//Do the filtering
+	pivot := numbers[0]
+	for _, i := range(numbers[1:]) {
+		if i <= pivot { 
+			lesser = append(lesser, i) 
+		} else if i > pivot { 
+			greater = append(greater, i) 
+		}
+	}
+	return pivot, lesser, greater
+
+}
+
+func quicksort(numbers []int) []int {
+	if len(numbers) <= 1 {
+		//handles the empty slice or the single item slice
+		return numbers
+	}
+	
+	newnumbers := make([]int, 0, len(numbers))
+	
+	//Sort the lesser and greater
+	pivot, lesser, greater := filter(numbers)
+	
+	lesser = quicksort(lesser)
+	greater = quicksort(greater)
+	
+	newnumbers = append(newnumbers, lesser...)
+	newnumbers = append(newnumbers, pivot)
+        newnumbers = append(newnumbers, greater...)	
+	return newnumbers
+}
+
+func main() {
+	start := time.Now()
+	
+	numbers := []int{25, 10, 5, 1, 15, 13, 12, 13, 3, 4, 5, 10}
+	newnumbers := quicksort(numbers)
+	fmt.Println(newnumbers)
+	
+	fmt.Println("Elapsed time:", time.Now().Sub(start))
+}
+</pre>
+</div>
+
+<div class="slide noslide">
+<h2>Concurrency</h2>
+<pre class="source">
+//Quicksort (parallel)
+package main
+
+import (
+	"fmt"
+	"time"
+)
+
+func filter(numbers []int) (int, []int, []int) {
+	//Make slices to sort filter the numbers into
+	lesser := make([]int, 0, len(numbers))
+	greater := make([]int, 0, len(numbers))
+	
+	
+	//Do the filtering
+	pivot := numbers[0]
+	for _, i := range(numbers[1:]) {
+		if i <= pivot { 
+			lesser = append(lesser, i) 
+		} else if i > pivot { 
+			greater = append(greater, i) 
+		}
+	}
+	return pivot, lesser, greater
+
+}
+
+func quicksort(numbers []int, c chan []int) {
+	//A parallel quicksort
+	if len(numbers) < 2 {
+		//handles the empty slice or the single item slice
+		c <- numbers
+		return
+	}
+	
+	newnumbers := make([]int, 0, len(numbers))
+	
+	//Sort the lesser and greater
+	pivot, lesser, greater := filter(numbers)
+	
+	lesserchan, greaterchan := make(chan []int), make(chan []int) 
+	go quicksort(lesser, lesserchan)
+	go quicksort(greater, greaterchan)
+	
+	//Make a new list and return it back to the channel
+	newnumbers = append(newnumbers, <-lesserchan...)
+	newnumbers = append(newnumbers, pivot)
+	newnumbers = append(newnumbers, <-greaterchan...)
+	c <- newnumbers
+}
+
+func main() {
+	start := time.Now()
+	
+	c := make(chan []int)
+	numbers := []int{25, 10, 5, 1, 15, 13, 12, 13, 3, 4, 5, 10}
+	go quicksort(numbers, c)
+	fmt.Println(<-c)
+	
+	fmt.Println("Elapsed time:", time.Now().Sub(start))
+}
+</pre>
+</div>
+<div class="slide">
+	<h2>A web example</h2>
+	Go's web libraries are starting to shape up already, with a decent JSON library, and a good basis for serving HTTP, and a basic templating engine (with more popping up weekly).
+<pre class="source">
+package main
+
+import (
+	"fmt"
+	"net/http"
+)
+
+func view(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "&lt;h1&gt;Hi there&lt;/h1&gt;")
+}
+
+func main() {
+	http.HandleFunc("/", view)
+	http.ListenAndServe(":8080", nil)
+}
+</pre>
+</div>
+
+<div class="slide">
+	<h2>Defer</h2>
+	Defer allows you to do things like close files after a function, whether the function panics or not. It also allows you to recover from a panic.
+	<pre class="source">
+package main
+import "fmt"
+
+func main() {
+	defer fmt.Println("This function has already exited")
+	fmt.Println("This should print first.")
+}
+</pre>
+</div>
+
+<div class="slide nocode">
+	<h2>Thoughts</h2>
+	<ul>
+		<li>On its way</li>
+		<li>Fun to work with</li>
+		<li>Garbage collector needs work (which has been an admitted issue)</li>
+		<li>Won't replace python for me (but C?)</li>
+		<li>Some things still missing</li>
+		<li>Is gaining a lot of exposure</li>
+		<li>Trending to be a great language</li>
+		<li>Great tooling so far</li>
+	</ul>
+</div>
+
 
 
 </div><!-- end slides -->
